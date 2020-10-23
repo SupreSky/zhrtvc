@@ -128,6 +128,8 @@ def preprocess_speaker_user(speaker_dir, out_dir: Path, skip_existing: bool, hpa
 def preprocess_utterance_user(line, speaker_dir, out_dir: Path, skip_existing: bool, hparams):
     fname, text = line
     wav_fpath = speaker_dir.joinpath(fname)
+    import warnings
+    warnings.simplefilter("ignore")
     try:
         assert wav_fpath.exists()
         fname = fname.replace('/', '-')
@@ -292,6 +294,8 @@ def embed_utterance(fpaths, encoder_model_fpath, hparams):
 
 
 def create_embeddings(synthesizer_root: Path, encoder_model_fpath: Path, n_processes: int, hparams):
+    import warnings
+    warnings.simplefilter("ignore")
     # wav_dir = synthesizer_root.joinpath("audio")
     metadata_fpath = synthesizer_root.joinpath("train.txt")
     assert metadata_fpath.exists()
