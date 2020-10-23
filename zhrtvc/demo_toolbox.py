@@ -11,7 +11,7 @@ import argparse
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="可视化分析的Demo。",
+        description="Runs the toolbox",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 

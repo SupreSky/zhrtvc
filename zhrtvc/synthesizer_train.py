@@ -22,7 +22,7 @@ def prepare_run(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="训练语音合成器模型。",
+    parser = argparse.ArgumentParser(description="Training synthesizer model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--name", default='synz', help="Name of the run and of the logging directory.")
     parser.add_argument("--synthesizer_root", type=str, default=r'../data/SV2TTS/synthesizer', help= \

@@ -11,7 +11,7 @@ from melgan.train import train_melgan
 if __name__ == "__main__":
     print(__file__)
     parser = argparse.ArgumentParser(
-        description="训练MelGAN声码器模型。",
+        description="Training MelGAN Vocoder model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 

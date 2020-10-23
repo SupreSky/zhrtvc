@@ -6,7 +6,7 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="把语音信号转为语音表示向量。",
+        description="Creates embeddings for the synthesizer from the LibriSpeech utterances.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--synthesizer_root", type=Path, default=Path(r'../data/SV2TTS/synthesizer'), help= \

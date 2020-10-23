@@ -6,7 +6,9 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="把语音信号转为频谱等模型训练需要的数据。",
+        description="Preprocesses audio files from datasets, encodes them as mel spectrograms "
+                    "and writes them to  the disk. Audio files are also saved, to be used by the "
+                    "vocoder for training.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--datasets_root", type=Path, default=Path(r'../data'), help= \
