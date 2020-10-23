@@ -15,24 +15,8 @@ from data_utils import TextMelLoader, TextMelCollate
 from loss_function import Tacotron2Loss
 from logger import Tacotron2Logger
 from hparams import create_hparams
-from utils import inv_linearspectrogram
-
-from pathlib import Path
-import matplotlib.pyplot as plt
-import aukit
-import json
 
 _device = 'cpu'
-
-
-def json_dump(obj, path):
-    obj = {k: v for k, v in obj.items()}
-    if os.path.isfile(path):
-        dt = json.load(open(path, encoding="utf8"))
-        if obj != dt:
-            path = "{}_{}.json".format(os.path.splitext(path)[0], time.strftime("%Y%m%d-%H%M%S"))
-    json.dump(obj, open(path, "wt", encoding="utf8"), indent=4, ensure_ascii=False)
-
 
 def reduce_tensor(tensor, n_gpus):
     rt = tensor.clone()
@@ -56,11 +40,11 @@ def init_distributed(hparams, n_gpus, rank, group_name):
     print("Done initializing distributed")
 
 
-def prepare_dataloaders(input_directory, hparams):
+def prepare_dataloaders(hparams):
     # Get data, data loaders and collate function ready
-    trainset = TextMelLoader(os.path.join(input_directory, 'train.txt'), hparams, mode=hparams.train_mode)
-    valset = TextMelLoader(os.path.join(input_directory, 'validation.txt'), hparams,
-                           speaker_ids=trainset.speaker_ids, mode=hparams.train_mode)
+    trainset = TextMelLoader(hparams.training_files, hparams)
+    valset = TextMelLoader(hparams.validation_files, hparams,
+                           speaker_ids=trainset.speaker_ids)
     collate_fn = TextMelCollate(hparams.n_frames_per_step)
 
     if hparams.distributed_run:
@@ -111,7 +95,7 @@ def load_checkpoint(checkpoint_path, model, optimizer):
     optimizer.load_state_dict(checkpoint_dict['optimizer'])
     learning_rate = checkpoint_dict['learning_rate']
     iteration = checkpoint_dict['iteration']
-    print("Loaded checkpoint '{}' from iteration {}".format(
+    print("Loaded checkpoint '{}' from iteration {}" .format(
         checkpoint_path, iteration))
     return model, optimizer, learning_rate, iteration
 
@@ -126,51 +110,20 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
 
 
 def validate(model, criterion, valset, iteration, batch_size, n_gpus,
-             collate_fn, logger, distributed_run, rank, outdir=Path()):
+             collate_fn, logger, distributed_run, rank):
     """Handles all the validation scoring and printing"""
-    save_flag = True
     model.eval()
     with torch.no_grad():
         val_sampler = DistributedSampler(valset) if distributed_run else None
         val_loader = DataLoader(valset, sampler=val_sampler, num_workers=1,
-                                shuffle=True, batch_size=batch_size,
-                                pin_memory=False, collate_fn=collate_fn)  # shuffle=False,
+                                shuffle=False, batch_size=batch_size,
+                                pin_memory=False, collate_fn=collate_fn)
 
         val_loss = 0.0
         for i, batch in enumerate(val_loader):
-            x, y = model.parse_batch(batch)  # y: 2部分
-            # x: (text_padded, input_lengths, mel_padded, max_len, output_lengths, speaker_ids, f0_padded),
-            # y: (mel_padded, gate_padded)
-            # x:
-            # torch.Size([4, 64])
-            # torch.Size([4])
-            # torch.Size([4, 401, 347])
-
-            # y:
-            # torch.Size([4, 401, 439])
-            # torch.Size([4, 439])
-
-            y_pred = model(x)  # y_pred: 4部分
-            # y_pred:
-            # torch.Size([4, 401, 439])
-            # torch.Size([4, 401, 439])
-            # torch.Size([4, 439])
-            # torch.Size([4, 439, 114])
-
-            mel_outputs, mel_outputs_2, gate_outputs, alignments = y_pred
+            x, y = model.parse_batch(batch)
+            y_pred = model(x)
             loss = criterion(y_pred, y)
-            if outdir and save_flag:
-                curdir = outdir.joinpath('validation', f'{iteration:06d}-{loss.data.cpu().numpy():.4f}')
-                curdir.mkdir(exist_ok=True, parents=True)
-                plt.imsave(curdir.joinpath('spectrogram_pred.png'), mel_outputs[0].cpu().numpy())
-                plt.imsave(curdir.joinpath('spectrogram_true.png'), y[0][0].cpu().numpy())
-                plt.imsave(curdir.joinpath('alignment_pred.png'), alignments[0].cpu().numpy().T)
-                wav_output = inv_linearspectrogram(mel_outputs[0].cpu().numpy())
-                aukit.save_wav(wav_output, curdir.joinpath('griffinlim_pred.wav'), sr=hparams.sampling_rate)
-                wav_output = inv_linearspectrogram(y[0][0].cpu().numpy())
-                aukit.save_wav(wav_output, curdir.joinpath('griffinlim_true.wav'), sr=hparams.sampling_rate)
-                save_flag = False
-
             if distributed_run:
                 reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
             else:
@@ -181,10 +134,10 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
     model.train()
     if rank == 0:
         print("Validation loss {}: {:9f}  ".format(iteration, reduced_val_loss))
-        logger.log_validation(val_loss, model, y, y_pred, iteration, x)
+        logger.log_validation(val_loss, model, y, y_pred, iteration)
 
 
-def train(input_directory, output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
+def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
           rank, group_name, hparams):
     """Training and validation logging results to tensorboard and stdout
 
@@ -221,24 +174,7 @@ def train(input_directory, output_directory, log_directory, checkpoint_path, war
     logger = prepare_directories_and_logger(
         output_directory, log_directory, rank)
 
-    train_loader, valset, collate_fn, train_sampler = prepare_dataloaders(input_directory, hparams)
-
-    # 记录训练的元数据。
-    meta_folder = os.path.join(output_directory, 'metadata')
-    os.makedirs(meta_folder, exist_ok=True)
-
-    path = os.path.join(meta_folder, "speakers.json")
-    obj = dict(valset.speaker_ids)
-    json_dump(obj, path)
-
-    path = os.path.join(meta_folder, "hparams.json")
-    obj = {k: v for k, v in hparams.items()}
-    json_dump(obj, path)
-
-    path = os.path.join(meta_folder, "symbols.json")
-    from text.symbols import symbols
-    obj = {w: i for i, w in enumerate(symbols)}
-    json_dump(obj, path)
+    train_loader, valset, collate_fn, train_sampler = prepare_dataloaders(hparams)
 
     # Load checkpoint if one exists
     iteration = 0
@@ -305,11 +241,11 @@ def train(input_directory, output_directory, log_directory, checkpoint_path, war
 
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
                 validate(model, criterion, valset, iteration,
-                         hparams.batch_size, n_gpus, collate_fn, logger,
-                         hparams.distributed_run, rank, outdir=Path(output_directory))
+                        hparams.batch_size, n_gpus, collate_fn, logger,
+                        hparams.distributed_run, rank)
                 if rank == 0:
                     checkpoint_path = os.path.join(
-                        output_directory, "checkpoint-{:06d}.pt".format(iteration))
+                        output_directory, "checkpoint_{}".format(iteration))
                     save_checkpoint(model, optimizer, learning_rate, iteration,
                                     checkpoint_path)
 
@@ -317,17 +253,8 @@ def train(input_directory, output_directory, log_directory, checkpoint_path, war
 
 
 if __name__ == '__main__':
-    try:
-        from setproctitle import setproctitle
-
-        setproctitle('zhrtvc-mellotron-train')
-    except ImportError:
-        pass
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input_directory', type=str, default=r"../../data/SV2TTS/mellotron/samples_ssml",
-                        help='directory to save checkpoints')
-    parser.add_argument('-o', '--output_directory', type=str, default=r"../../models/mellotron/samples_ssml",
+    parser.add_argument('-o', '--output_directory', type=str, default=r'F:\github\zhrtvc\models\mellotron\hello',
                         help='directory to save checkpoints')
     parser.add_argument('-l', '--log_directory', type=str, default='tensorboard',
                         help='directory to save tensorboard logs')
@@ -341,7 +268,7 @@ if __name__ == '__main__':
                         required=False, help='rank of current gpu')
     parser.add_argument('--group_name', type=str, default='group_name',
                         required=False, help='Distributed group name')
-    parser.add_argument('--hparams', type=str, default='{"batch_size":4,"iters_per_checkpoint":10}',
+    parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
 
     args = parser.parse_args()
@@ -356,14 +283,5 @@ if __name__ == '__main__':
     print("cuDNN Enabled:", hparams.cudnn_enabled)
     print("cuDNN Benchmark:", hparams.cudnn_benchmark)
 
-    meta_folder = os.path.join(args.output_directory, 'metadata')
-    os.makedirs(meta_folder, exist_ok=True)
-
-    path = os.path.join(meta_folder, "args.json")
-    obj = args.__dict__
-    json_dump(obj, path)
-
-    train(args.input_directory, args.output_directory, args.log_directory, args.checkpoint_path,
+    train(args.output_directory, args.log_directory, args.checkpoint_path,
           args.warm_start, args.n_gpus, args.rank, args.group_name, hparams)
-    # 命令行执行：
-    # python train.py -i ../../data/SV2TTS/mellotron/aliaudio -o ../../models/mellotron/aliaudio-f06s02 --hparams {\"batch_size\":64,\"iters_per_checkpoint\":5000}

@@ -1,18 +1,18 @@
 # import tensorflow as tf
 # from text.symbols import symbols
-from aukit import Dict2Obj, hparams_griffinlim
+from aukit import Dict2Obj
 
 
 def create_hparams(hparams_string=None, verbose=False, level=2):
     """Create model hyperparameters. Parse nondefault from given string."""
-    print(repr(hparams_string))
+
     # hparams = tf.contrib.training.HParams(
     hparams = Dict2Obj(dict(
         ################################
         # Experiment Parameters        #
         ################################
-        epochs=1000000,
-        iters_per_checkpoint=10000,  # 500,
+        epochs=50000,
+        iters_per_checkpoint=5000,  # 500,
         seed=1234,
         dynamic_loss_scaling=True,
         fp16_run=False,
@@ -26,17 +26,11 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
         ################################
         # Data Parameters             #
         ################################
-        train_mode='train-f06s02',
-        # f01:用基频；f02:用基频均值填充；f03:用零向量代替基频；f04:不用基频。
-        # f01,f02,f03的模式都把prenet_f0_dim设为1，f04把prenet_f0_dim设为0。
-        # f05s02:用speaker_id等距分配代替基频，speaker_id用0表示。
-
-        # training_files=r"../../data/SV2TTS/mellotron/samples_ssml/train.txt",
-        # 文件一行记录一个语音信息，每行的数据结构：数据文件夹名\t语音源文件\t文本\t说话人名称\n，样例如下：
-        # 000000	Aibao/005397.mp3	他走近钢琴并开始演奏“祖国从哪里开始”。	0
-        # validation_files=r"../../data/SV2TTS/mellotron/samples_ssml/validation.txt",
+        training_files=r"F:\github\zhrtvc\data\SV2TTS\mellotron\train.txt",
+        # 'filelists/ljs_audiopaths_text_sid_train_filelist.txt',
+        validation_files=r"F:\github\zhrtvc\data\SV2TTS\mellotron\validation.txt",
         # 'filelists/ljs_audiopaths_text_sid_val_filelist.txt',
-        text_cleaners='ssml',  # ['chinese_cleaners'],
+        text_cleaners=['english_cleaners'],
         p_arpabet=1.0,
         cmudict_path=None,  # "data/cmu_dictionary",
 
@@ -44,11 +38,11 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
         # Audio Parameters             #
         ################################
         max_wav_value=32768.0,
-        sampling_rate=hparams_griffinlim.sample_rate,  # 16000,  # 22050,
-        filter_length=hparams_griffinlim.n_fft,  # 1024,
-        hop_length=hparams_griffinlim.hop_size,  # 256,
-        win_length=hparams_griffinlim.win_size,  # 1024,
-        n_mel_channels=401,  # 80,
+        sampling_rate=22050,  # 22050,
+        filter_length=1024,
+        hop_length=256,
+        win_length=1024,
+        n_mel_channels=80,
         mel_fmin=0.0,
         mel_fmax=8000.0,
         f0_min=80,
@@ -71,7 +65,7 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
         decoder_rnn_dim=256 * level,  # 1024,
         prenet_dim=64 * level,  # 256,
         prenet_f0_n_layers=1,
-        prenet_f0_dim=8,  # 1, 如果不启用f0，则设置为0。
+        prenet_f0_dim=1,
         prenet_f0_kernel_size=1,
         prenet_rms_dim=0,
         prenet_rms_kernel_size=1,
@@ -95,11 +89,11 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
         postnet_n_convolutions=5,
 
         # Speaker embedding
-        n_speakers=20,
+        n_speakers=123,
         speaker_embedding_dim=16 * level,  # 32 * level,  # 128,
 
         # Reference encoder
-        with_gst=False,  # True,
+        with_gst=True,
         ref_enc_filters=[8 * level, 8 * level, 16 * level, 16 * level, 32 * level, 32 * level],
         # [32, 32, 64, 64, 128, 128],
         ref_enc_size=[3, 3],
@@ -108,7 +102,7 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
         ref_enc_gru_size=32 * level,  # 128,
 
         # Style Token Layer
-        token_embedding_size=0,  # 64 * level,  # 256,  # 如果with_gst=False，则手动改为0。
+        token_embedding_size=16 * level,  # 64 * level,  # 256,
         token_num=10,
         num_heads=8,
 
@@ -132,4 +126,5 @@ def create_hparams(hparams_string=None, verbose=False, level=2):
 
     # if verbose:
     #     tf.compat.v1.logging.info('Final parsed hparams: %s', hparams.values())
+
     return hparams
